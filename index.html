@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Voice Assistant</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  :root {
+    --bg: #0f0f1a; --card: #1a1a2e; --border: #2a2a3e;
+    --purple: #6c63ff; --text: #ffffff; --muted: #888888;
+    --green: #6bcb77; --yellow: #ffd93d; --red: #ff6b6b; --blue: #4cc9f0;
+  }
+  body { font-family: 'Segoe UI', Tahoma, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; direction: ltr; }
+
+  .nav { display: flex; background: #0a0a14; border-top: 1px solid var(--border); position: fixed; bottom: 0; left: 0; right: 0; z-index: 100; padding-bottom: env(safe-area-inset-bottom); }
+  .nav-btn { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 10px 0 6px; background: none; border: none; color: #555; cursor: pointer; font-size: 10px; gap: 4px; transition: color .2s; }
+  .nav-btn.active { color: var(--purple); }
+  .nav-btn svg { width: 24px; height: 24px; }
+
+  .screen { display: none; padding: 20px 16px 90px; max-width: 480px; margin: 0 auto; }
+  .screen.active { display: block; }
+
+  .clock { font-size: 52px; font-weight: 200; color: var(--purple); line-height: 1; margin-bottom: 4px; }
+  .greeting { font-size: 26px; font-weight: 700; margin-bottom: 2px; }
+  .subtitle { color: var(--muted); font-size: 14px; margin-bottom: 28px; }
+
+  .voice-section { display: flex; flex-direction: column; align-items: center; margin: 20px 0 28px; }
+  .status-text { color: var(--muted); font-size: 15px; margin-bottom: 24px; text-align: center; min-height: 22px; }
+
+  .voice-wrap { position: relative; width: 120px; height: 120px; display: flex; align-items: center; justify-content: center; }
+  .pulse-ring { position: absolute; border-radius: 50%; background: rgba(108,99,255,0.15); animation: pulse 1.2s ease-out infinite; display: none; }
+  .pulse-ring:nth-child(1) { width: 110px; height: 110px; }
+  .pulse-ring:nth-child(2) { width: 90px; height: 90px; animation-delay: .3s; }
+  .recording .pulse-ring { display: block; }
+  @keyframes pulse { 0% { transform: scale(.9); opacity: .8; } 100% { transform: scale(1.3); opacity: 0; } }
+
+  .mic-btn { width: 82px; height: 82px; border-radius: 50%; background: var(--purple); border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 24px rgba(108,99,255,.45); transition: background .2s, box-shadow .2s; position: relative; z-index: 1; user-select: none; -webkit-user-select: none; }
+  .mic-btn.recording { background: var(--red); box-shadow: 0 4px 24px rgba(255,107,107,.45); }
+  .mic-btn.processing { background: var(--blue); box-shadow: 0 4px 24px rgba(76,201,240,.45); }
+  .mic-btn svg { width: 36px; height: 36px; color: #fff; }
+  .spinner { width: 32px; height: 32px; border: 3px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .rec-timer { font-size: 18px; color: var(--red); margin-top: 12px; font-variant-numeric: tabular-nums; min-height: 28px; }
+
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; margin-bottom: 14px; }
+  .card-label { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+  .card-text { font-size: 15px; line-height: 1.6; }
+  .response-card { border-color: rgba(108,99,255,.3); }
+  .response-text { color: #dde; }
+  .tips { list-style: none; }
+  .tips li { color: var(--muted); font-size: 13px; line-height: 1.8; padding: 4px 0; border-bottom: 1px solid var(--border); }
+  .tips li:last-child { border: none; }
+  .action-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 14px; }
+  .action-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+  .screen-title { font-size: 26px; font-weight: 700; margin-bottom: 6px; }
+  .stats-row { display: flex; gap: 20px; margin-bottom: 20px; }
+  .stat { text-align: center; }
+  .stat-n { font-size: 28px; font-weight: 700; color: var(--purple); }
+  .stat-l { font-size: 12px; color: var(--muted); }
+  .stat-n.green { color: var(--green); }
+
+  .filters { display: flex; gap: 8px; margin-bottom: 16px; }
+  .filter-btn { padding: 6px 16px; border-radius: 20px; border: 1px solid var(--border); background: none; color: #777; cursor: pointer; font-size: 13px; transition: all .2s; }
+  .filter-btn.active { background: var(--purple); border-color: var(--purple); color: #fff; }
+
+  .todo-list { list-style: none; }
+  .todo-item { display: flex; align-items: center; gap: 12px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 13px 14px; margin-bottom: 8px; transition: opacity .2s; }
+  .todo-item.done { opacity: .55; }
+  .todo-check { width: 26px; height: 26px; border-radius: 50%; border: 2px solid #444; background: none; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: all .2s; }
+  .todo-item.done .todo-check { background: var(--green); border-color: var(--green); }
+  .todo-info { flex: 1; min-width: 0; }
+  .todo-title { font-size: 15px; }
+  .todo-item.done .todo-title { text-decoration: line-through; color: var(--muted); }
+  .todo-meta { display: flex; gap: 8px; margin-top: 4px; align-items: center; flex-wrap: wrap; }
+  .badge { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; }
+  .priority-high { background: rgba(255,107,107,.2); color: var(--red); }
+  .priority-medium { background: rgba(255,217,61,.2); color: var(--yellow); }
+  .priority-low { background: rgba(107,203,119,.2); color: var(--green); }
+  .cat-badge { background: rgba(255,255,255,.08); color: var(--muted); }
+  .todo-del { background: none; border: none; cursor: pointer; color: rgba(255,107,107,.4); padding: 4px; flex-shrink: 0; }
+
+  .empty-state { text-align: center; padding: 60px 0; color: var(--muted); }
+  .empty-state svg { width: 60px; height: 60px; opacity: .3; margin-bottom: 12px; }
+  .empty-title { font-size: 17px; margin-bottom: 6px; }
+  .empty-sub { font-size: 13px; }
+  .clear-btn { width: 100%; margin-top: 8px; padding: 12px; background: none; border: 1px solid rgba(255,107,107,.3); border-radius: 12px; color: var(--red); cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+
+  .tab-row { display: flex; gap: 8px; margin-bottom: 16px; }
+  .tab-btn { flex: 1; padding: 10px; border-radius: 12px; background: var(--card); border: 1px solid var(--border); color: #666; cursor: pointer; font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 6px; transition: all .2s; }
+  .tab-btn.active { border-color: rgba(108,99,255,.4); color: var(--yellow); }
+  .reminder-item { display: flex; align-items: center; gap: 12px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 13px 14px; margin-bottom: 8px; }
+  .r-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .r-icon.alarm { background: rgba(255,217,61,.15); }
+  .r-icon.cal { background: rgba(76,201,240,.15); }
+  .r-info { flex: 1; min-width: 0; }
+  .r-title { font-size: 15px; margin-bottom: 4px; }
+  .r-time { font-size: 12px; color: var(--muted); }
+  .r-del { background: none; border: none; cursor: pointer; color: rgba(255,107,107,.4); padding: 4px; }
+
+  .setting-item { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; }
+  .setting-label { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+  .setting-input { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; color: var(--text); font-size: 14px; direction: ltr; }
+  .setting-input:focus { outline: none; border-color: var(--purple); }
+  .save-btn { width: 100%; padding: 14px; background: var(--purple); border: none; border-radius: 12px; color: #fff; font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 4px; }
+  .section-title { font-size: 13px; color: var(--muted); margin: 20px 0 10px; font-weight: 600; }
+
+  .toast { position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%) translateY(20px); background: #2a2a3e; border: 1px solid var(--border); border-radius: 20px; padding: 10px 20px; font-size: 14px; color: #fff; opacity: 0; transition: all .3s; z-index: 200; white-space: nowrap; max-width: 90vw; text-align: center; }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<!-- HOME -->
+<div class="screen active" id="screen-home">
+  <div class="clock" id="clock">--:--</div>
+  <div class="greeting">Hey Murteza 👋</div>
+  <div class="subtitle" id="date-text"></div>
+
+  <div class="voice-section">
+    <div class="status-text" id="status-text">Hold the button and speak</div>
+    <div class="voice-wrap" id="voice-wrap">
+      <div class="pulse-ring"></div>
+      <div class="pulse-ring"></div>
+      <button class="mic-btn" id="mic-btn"
+        ontouchstart="startRec(event)" ontouchend="stopRec(event)"
+        onmousedown="startRec(event)" onmouseup="stopRec(event)" onmouseleave="stopRec(event)">
+        <svg id="mic-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3M8 22h8"/>
+        </svg>
+        <div class="spinner" id="spinner" style="display:none"></div>
+      </button>
+    </div>
+    <div class="rec-timer" id="rec-timer"></div>
+  </div>
+
+  <div id="transcript-card" class="card" style="display:none">
+    <div class="card-label">🎙️ You said:</div>
+    <div class="card-text" id="transcript-text"></div>
+  </div>
+  <div id="response-card" class="card response-card" style="display:none">
+    <div class="card-label">✨ Assistant:</div>
+    <div class="card-text response-text" id="response-text"></div>
+    <div id="actions-list"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">💡 Example commands:</div>
+    <ul class="tips">
+      <li>Add milk and bread to my list</li>
+      <li>I have a meeting with John tomorrow at 10am</li>
+      <li>Remind me to buy medicine on Saturday</li>
+      <li>Add dentist appointment Monday at 3pm</li>
+      <li>Add Ali's birthday to my calendar on Friday</li>
+    </ul>
+  </div>
+</div>
+
+<!-- TODOS -->
+<div class="screen" id="screen-todos">
+  <div class="screen-title">To-Do List</div>
+  <div class="stats-row">
+    <div class="stat"><div class="stat-n" id="active-cnt">0</div><div class="stat-l">Remaining</div></div>
+    <div class="stat"><div class="stat-n green" id="done-cnt">0</div><div class="stat-l">Completed</div></div>
+  </div>
+  <div class="filters">
+    <button class="filter-btn active" onclick="setFilter('all',this)">All</button>
+    <button class="filter-btn" onclick="setFilter('active',this)">Active</button>
+    <button class="filter-btn" onclick="setFilter('done',this)">Done</button>
+  </div>
+  <ul class="todo-list" id="todo-list"></ul>
+  <button class="clear-btn" id="clear-btn" onclick="clearDone()" style="display:none">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg>
+    Clear completed
+  </button>
+</div>
+
+<!-- REMINDERS -->
+<div class="screen" id="screen-reminders">
+  <div class="screen-title">Reminders & Calendar</div>
+  <div class="tab-row">
+    <button class="tab-btn active" id="tab-rem" onclick="showTab('rem')">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+      Reminders
+    </button>
+    <button class="tab-btn" id="tab-cal" onclick="showTab('cal')">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      Events
+    </button>
+  </div>
+  <div id="rem-list"></div>
+  <div id="cal-list" style="display:none"></div>
+</div>
+
+<!-- SETTINGS -->
+<div class="screen" id="screen-settings">
+  <div class="screen-title">Settings</div>
+  <div class="section-title">🔑 API Keys</div>
+  <div class="setting-item">
+    <div class="setting-label">Claude API Key</div>
+    <input type="password" class="setting-input" id="inp-claude" placeholder="sk-ant-..." />
+  </div>
+  <div class="setting-item">
+    <div class="setting-label">OpenAI API Key (for voice recognition)</div>
+    <input type="password" class="setting-input" id="inp-openai" placeholder="sk-proj-..." />
+  </div>
+  <button class="save-btn" onclick="saveSettings()">Save</button>
+  <div class="section-title">ℹ️ About</div>
+  <div class="card">
+    <div class="card-text" style="font-size:13px;color:var(--muted);line-height:1.8">
+      AI Voice Assistant<br>
+      Voice recognition: OpenAI Whisper<br>
+      Command processing: Claude AI
+    </div>
+  </div>
+</div>
+
+<!-- NAV -->
+<nav class="nav">
+  <button class="nav-btn active" onclick="goTo('home',this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+    Assistant
+  </button>
+  <button class="nav-btn" onclick="goTo('todos',this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+    Tasks
+  </button>
+  <button class="nav-btn" onclick="goTo('reminders',this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+    Reminders
+  </button>
+  <button class="nav-btn" onclick="goTo('settings',this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    Settings
+  </button>
+</nav>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── CONFIG ──────────────────────────────────────────
+let CLAUDE_KEY = localStorage.getItem('claude_key') || '';
+let OPENAI_KEY = localStorage.getItem('openai_key') || '';
+
+let todos     = JSON.parse(localStorage.getItem('todos')     || '[]');
+let reminders = JSON.parse(localStorage.getItem('reminders') || '[]');
+let events    = JSON.parse(localStorage.getItem('events')    || '[]');
+let currentFilter = 'all';
+let mediaRecorder = null;
+let audioChunks   = [];
+let isRecording   = false;
+let isProcessing  = false;
+let timerInterval = null;
+let recSeconds    = 0;
+
+// ── CLOCK ────────────────────────────────────────────
+function updateClock() {
+  const now = new Date();
+  document.getElementById('clock').textContent =
+    now.toLocaleTimeString('fa-IR', { hour:'2-digit', minute:'2-digit' });
+  document.getElementById('date-text').textContent =
+    now.toLocaleDateString('fa-IR', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ── NAV ──────────────────────────────────────────────
+function goTo(id, btn) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('screen-' + id).classList.add('active');
+  btn.classList.add('active');
+  if (id === 'todos')     renderTodos();
+  if (id === 'reminders') renderReminders();
+  if (id === 'settings')  loadSettings();
+}
+
+// ── SETTINGS ─────────────────────────────────────────
+function loadSettings() {
+  document.getElementById('inp-claude').value = CLAUDE_KEY;
+  document.getElementById('inp-openai').value = OPENAI_KEY;
+}
+function saveSettings() {
+  CLAUDE_KEY = document.getElementById('inp-claude').value.trim();
+  OPENAI_KEY = document.getElementById('inp-openai').value.trim();
+  localStorage.setItem('claude_key', CLAUDE_KEY);
+  localStorage.setItem('openai_key', OPENAI_KEY);
+  toast('✅ Saved!');
+}
+
+// ── RECORDING ────────────────────────────────────────
+async function startRec(e) {
+  e.preventDefault();
+  if (isProcessing || isRecording) return;
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioChunks = [];
+    isRecording = true;
+
+    // انتخاب بهترین فرمت صوتی
+    const mimeType = MediaRecorder.isTypeSupported('audio/webm')
+      ? 'audio/webm'
+      : MediaRecorder.isTypeSupported('audio/mp4')
+        ? 'audio/mp4'
+        : 'audio/ogg';
+
+    mediaRecorder = new MediaRecorder(stream, { mimeType });
+    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+    mediaRecorder.start(100);
+
+    // UI
+    document.getElementById('mic-btn').classList.add('recording');
+    document.getElementById('voice-wrap').classList.add('recording');
+    document.getElementById('status-text').textContent = '🔴 Recording... release to stop';
+    document.getElementById('transcript-card').style.display = 'none';
+    document.getElementById('response-card').style.display = 'none';
+
+    // تایمر
+    recSeconds = 0;
+    document.getElementById('rec-timer').textContent = '0:00';
+    timerInterval = setInterval(() => {
+      recSeconds++;
+      const m = Math.floor(recSeconds / 60);
+      const s = String(recSeconds % 60).padStart(2, '0');
+      document.getElementById('rec-timer').textContent = `${m}:${s}`;
+    }, 1000);
+
+  } catch (err) {
+    toast('❌ Microphone access denied. Allow it in Safari settings.');
+  }
+}
+
+async function stopRec(e) {
+  e.preventDefault();
+  if (!isRecording || !mediaRecorder) return;
+  isRecording = false;
+  clearInterval(timerInterval);
+  document.getElementById('rec-timer').textContent = '';
+
+  mediaRecorder.stop();
+  mediaRecorder.stream.getTracks().forEach(t => t.stop());
+
+  // صبر برای دریافت آخرین chunk
+  await new Promise(r => setTimeout(r, 300));
+
+  setProcessing(true);
+
+  try {
+    const mimeType = mediaRecorder.mimeType || 'audio/webm';
+    const blob = new Blob(audioChunks, { type: mimeType });
+
+    if (blob.size < 1000) {
+      throw new Error('صدا خیلی کوتاه بود. دوباره امتحان کن.');
+    }
+
+    // ارسال به Whisper
+    setStatus('📡 Transcribing audio...');
+    const ext = mimeType.includes('mp4') ? 'm4a' : mimeType.includes('ogg') ? 'ogg' : 'webm';
+    const formData = new FormData();
+    formData.append('file', blob, `rec.${ext}`);
+    formData.append('model', 'whisper-1');
+    // زبان اتوماتیک تشخیص داده می‌شه
+
+    const whisperRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${OPENAI_KEY}` },
+      body: formData
+    });
+
+    if (!whisperRes.ok) {
+      const err = await whisperRes.json();
+      throw new Error('Whisper: ' + (err.error?.message || whisperRes.status));
+    }
+
+    const { text } = await whisperRes.json();
+    if (!text || !text.trim()) throw new Error('Could not detect speech. Please speak louder.');
+
+    document.getElementById('transcript-text').textContent = text;
+    document.getElementById('transcript-card').style.display = 'block';
+
+    // ارسال به Claude
+    setStatus('🤖 Processing command...');
+    await processWithClaude(text);
+
+  } catch (err) {
+    toast('❌ ' + err.message);
+    setStatus('دکمه را نگه دارید و صحبت کنید');
+  }
+
+  setProcessing(false);
+}
+
+function setProcessing(on) {
+  isProcessing = on;
+  const btn = document.getElementById('mic-btn');
+  document.getElementById('mic-icon').style.display = on ? 'none' : '';
+  document.getElementById('spinner').style.display  = on ? '' : 'none';
+  btn.classList.toggle('processing', on);
+  btn.classList.remove('recording');
+  document.getElementById('voice-wrap').classList.remove('recording');
+  if (!on) setStatus('Hold the button and speak');
+}
+
+function setStatus(t) {
+  document.getElementById('status-text').textContent = t;
+}
+
+// ── CLAUDE ───────────────────────────────────────────
+async function processWithClaude(text) {
+  const now = new Date();
+
+  // ساخت context از آیتم‌های موجود
+  const context = {
+    todos: todos.slice(0,20).map(t => ({ id: t.id, title: t.title, priority: t.priority, done: t.done })),
+    reminders: reminders.slice(0,10).map(r => ({ id: r.id, title: r.title, datetime: r.datetime })),
+    events: events.slice(0,10).map(e => ({ id: e.id, title: e.title, startDate: e.startDate, location: e.location }))
+  };
+
+  const sys = `You are a smart AI voice assistant that understands multiple languages especially Persian/Farsi colloquial speech.
+
+Current date/time: ${now.toISOString()}
+Day of week: ${now.toLocaleDateString('en-US', {weekday:'long'})}
+
+User's existing data:
+TASKS: ${JSON.stringify(context.todos)}
+REMINDERS: ${JSON.stringify(context.reminders)}
+EVENTS: ${JSON.stringify(context.events)}
+
+=== PERSIAN DATE/TIME UNDERSTANDING ===
+- فردا = tomorrow
+- پس‌فردا = day after tomorrow
+- هفته دیگه / هفته آینده = next week (same day)
+- دیروز = yesterday
+- امروز = today
+- شنبه/یکشنبه/دوشنبه/سه‌شنبه/چهارشنبه/پنجشنبه/جمعه = Sat/Sun/Mon/Tue/Wed/Thu/Fri
+- صبح = morning (assume 9:00 if no time given)
+- ظهر = noon (12:00)
+- بعدازظهر / عصر = afternoon (assume 15:00 if no time given)
+- شب / عصر دیر = evening (assume 20:00 if no time given)
+- نیم = 30 minutes (e.g. ده و نیم = 10:30)
+- ربع = 15 minutes (e.g. سه و ربع = 3:15)
+
+=== PERSIAN COLLOQUIAL PATTERNS ===
+- "بذار تو لیستم" / "اضافه کن" / "یادداشت کن" → add todo
+- "یادم بینداز" / "ریمایندر بذار" / "یه یادآور بذار" → add reminder
+- "بذار تو تقویم" / "تو تقویمم بنویس" → add calendar event
+- "پاکش کن" / "حذفش کن" / "بزنش" → delete item
+- "تایمشو عوض کن" / "وقتشو بزن به..." / "ساعتشو عوض کن" → update time
+- "اسمشو عوض کن" / "تغییرش بده به" → update title
+- "تیکش بزن" / "انجامش دادم" / "خوندمش" → mark as done
+- "مهمه" / "اورژانسیه" → priority: high
+- "مهم نیست" / "وقت داره" → priority: low
+- References like "اون جلسه‌ای که گفتم", "همونی که گفتم", "اونی که دیروز گذاشتم" → fuzzy match existing items
+
+=== RULES ===
+- Always fuzzy-match user references to existing items (partial title, description)
+- Calculate exact ISO dates from relative expressions
+- Respond in the EXACT same language/dialect the user used
+- If user says something in Persian slang, respond in the same informal tone
+- Write NOTHING outside the JSON
+
+Return ONLY this JSON:
+{
+  "response": "friendly reply matching user's language and tone",
+  "add": {
+    "todos": [{"title":"","priority":"high|medium|low","category":"Work|Personal|Shopping|Health|Other"}],
+    "reminders": [{"title":"","datetime":"ISO8601","notes":""}],
+    "events": [{"title":"","startDate":"ISO8601","endDate":"ISO8601","location":""}]
+  },
+  "update": {
+    "todos": [{"id":"existing_id","title":"new title","priority":"high|medium|low","done":true}],
+    "reminders": [{"id":"existing_id","title":"new title","datetime":"new ISO8601"}],
+    "events": [{"id":"existing_id","title":"new title","startDate":"ISO8601","endDate":"ISO8601","location":""}]
+  },
+  "delete": {
+    "todos": ["id1"],
+    "reminders": ["id1"],
+    "events": ["id1"]
+  }
+}`;
+
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': CLAUDE_KEY,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1200,
+      system: sys,
+      messages: [{ role: 'user', content: `Command: "${text}"` }]
+    })
+  });
+
+  if (!res.ok) {
+    const e = await res.json();
+    throw new Error('Claude: ' + (e.error?.message || res.status));
+  }
+
+  const data = await res.json();
+  const raw = data.content[0].text.trim().replace(/```json\n?/g,'').replace(/```\n?/g,'').trim();
+  const result = JSON.parse(raw);
+  await applyResult(result);
+}
+
+async function applyResult(result) {
+  const actions = [];
+
+  // ── ADD ──────────────────────────────────────────
+  if (result.add?.todos?.length) {
+    result.add.todos.forEach(t => todos.unshift({
+      id: Date.now() + Math.random(), title: t.title,
+      priority: t.priority || 'medium', category: t.category || 'Other',
+      done: false, created: new Date().toISOString()
+    }));
+    saveTodos();
+    actions.push({ color: 'var(--green)', text: `${result.add.todos.length} task(s) added` });
+  }
+
+  if (result.add?.reminders?.length) {
+    result.add.reminders.forEach(r => {
+      const rem = { id: Date.now() + Math.random(), title: r.title, datetime: r.datetime, notes: r.notes || '' };
+      reminders.unshift(rem);
+      scheduleNotif(rem);
+    });
+    saveReminders();
+    actions.push({ color: 'var(--yellow)', text: `${result.add.reminders.length} reminder(s) set` });
+  }
+
+  if (result.add?.events?.length) {
+    result.add.events.forEach(ev => {
+      events.unshift({ id: Date.now() + Math.random(), title: ev.title, startDate: ev.startDate, endDate: ev.endDate || ev.startDate, location: ev.location || '' });
+      downloadICS(ev);
+    });
+    saveEvents();
+    actions.push({ color: 'var(--blue)', text: `${result.add.events.length} event(s) added — .ics downloaded` });
+  }
+
+  // ── UPDATE ────────────────────────────────────────
+  if (result.update?.todos?.length) {
+    result.update.todos.forEach(u => {
+      todos = todos.map(t => String(t.id) === String(u.id) ? { ...t, ...u } : t);
+    });
+    saveTodos();
+    actions.push({ color: 'var(--green)', text: `${result.update.todos.length} task(s) updated` });
+  }
+
+  if (result.update?.reminders?.length) {
+    result.update.reminders.forEach(u => {
+      reminders = reminders.map(r => String(r.id) === String(u.id) ? { ...r, ...u } : r);
+    });
+    saveReminders();
+    actions.push({ color: 'var(--yellow)', text: `${result.update.reminders.length} reminder(s) updated` });
+  }
+
+  if (result.update?.events?.length) {
+    result.update.events.forEach(u => {
+      events = events.map(e => String(e.id) === String(u.id) ? { ...e, ...u } : e);
+    });
+    saveEvents();
+    actions.push({ color: 'var(--blue)', text: `${result.update.events.length} event(s) updated` });
+  }
+
+  // ── DELETE ────────────────────────────────────────
+  if (result.delete?.todos?.length) {
+    const ids = result.delete.todos.map(String);
+    todos = todos.filter(t => !ids.includes(String(t.id)));
+    saveTodos();
+    actions.push({ color: 'var(--red)', text: `${ids.length} task(s) deleted` });
+  }
+
+  if (result.delete?.reminders?.length) {
+    const ids = result.delete.reminders.map(String);
+    reminders = reminders.filter(r => !ids.includes(String(r.id)));
+    saveReminders();
+    actions.push({ color: 'var(--red)', text: `${ids.length} reminder(s) deleted` });
+  }
+
+  if (result.delete?.events?.length) {
+    const ids = result.delete.events.map(String);
+    events = events.filter(e => !ids.includes(String(e.id)));
+    saveEvents();
+    actions.push({ color: 'var(--red)', text: `${ids.length} event(s) deleted` });
+  }
+
+  document.getElementById('response-text').textContent = result.response || 'Done!';
+  document.getElementById('actions-list').innerHTML = actions.map(a =>
+    `<div class="action-row"><div class="action-dot" style="background:${a.color}"></div><span style="color:#ddd;font-size:14px">${a.text}</span></div>`
+  ).join('');
+  document.getElementById('response-card').style.display = 'block';
+}
+
+// ── NOTIFICATION ─────────────────────────────────────
+async function scheduleNotif(rem) {
+  if (!('Notification' in window)) return;
+  const p = await Notification.requestPermission();
+  if (p !== 'granted') return;
+  const delay = new Date(rem.datetime) - new Date();
+  if (delay > 0) setTimeout(() => new Notification('🔔 ' + rem.title, { body: rem.notes || '' }), delay);
+}
+
+// ── ICS ──────────────────────────────────────────────
+function downloadICS(ev) {
+  const fmt = d => new Date(d).toISOString().replace(/[-:]/g,'').split('.')[0] + 'Z';
+  const ics = `BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VEVENT\nDTSTART:${fmt(ev.startDate)}\nDTEND:${fmt(ev.endDate||ev.startDate)}\nSUMMARY:${ev.title}\nLOCATION:${ev.location||''}\nEND:VEVENT\nEND:VCALENDAR`;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([ics], { type: 'text/calendar' }));
+  a.download = ev.title + '.ics';
+  a.click();
+}
+
+// ── TODOS ─────────────────────────────────────────────
+function saveTodos() { localStorage.setItem('todos', JSON.stringify(todos)); }
+function setFilter(f, btn) {
+  currentFilter = f;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderTodos();
+}
+function renderTodos() {
+  document.getElementById('active-cnt').textContent = todos.filter(t => !t.done).length;
+  document.getElementById('done-cnt').textContent   = todos.filter(t => t.done).length;
+  const filtered = todos.filter(t => currentFilter === 'active' ? !t.done : currentFilter === 'done' ? t.done : true);
+  const ul = document.getElementById('todo-list');
+  if (!filtered.length) {
+    ul.innerHTML = `<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg><div class="empty-title">List is empty</div><div class="empty-sub">Add tasks using your voice</div></div>`;
+  } else {
+    ul.innerHTML = filtered.map(t => `
+      <li class="todo-item ${t.done?'done':''}">
+        <button class="todo-check" onclick="toggleTodo('${t.id}')">
+          ${t.done ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>` : ''}
+        </button>
+        <div class="todo-info">
+          <div class="todo-title">${t.title}</div>
+          <div class="todo-meta">
+            <span class="badge priority-${t.priority}">${{high:'High',medium:'Medium',low:'Low'}[t.priority]||''}</span>
+            <span class="badge cat-badge">${t.category}</span>
+          </div>
+        </div>
+        <button class="todo-del" onclick="deleteTodo('${t.id}')">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
+        </button>
+      </li>`).join('');
+  }
+  document.getElementById('clear-btn').style.display = todos.filter(t=>t.done).length > 0 ? 'flex' : 'none';
+}
+function toggleTodo(id) { todos = todos.map(t => t.id==id ? {...t,done:!t.done} : t); saveTodos(); renderTodos(); }
+function deleteTodo(id)  { todos = todos.filter(t => t.id!=id); saveTodos(); renderTodos(); }
+function clearDone()     { todos = todos.filter(t => !t.done); saveTodos(); renderTodos(); }
+
+// ── REMINDERS ─────────────────────────────────────────
+function saveReminders() { localStorage.setItem('reminders', JSON.stringify(reminders)); }
+function saveEvents()    { localStorage.setItem('events',    JSON.stringify(events));    }
+function formatDT(dt) {
+  try { return new Date(dt).toLocaleString('fa-IR', { weekday:'short', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }); }
+  catch { return dt; }
+}
+function showTab(tab) {
+  document.getElementById('rem-list').style.display = tab==='rem' ? '' : 'none';
+  document.getElementById('cal-list').style.display = tab==='cal' ? '' : 'none';
+  document.getElementById('tab-rem').classList.toggle('active', tab==='rem');
+  document.getElementById('tab-cal').classList.toggle('active', tab==='cal');
+}
+function renderReminders() {
+  const remEl = document.getElementById('rem-list');
+  remEl.innerHTML = !reminders.length
+    ? `<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg><div class="empty-title">No reminders set</div></div>`
+    : reminders.map(r => `
+      <div class="reminder-item">
+        <div class="r-icon alarm"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffd93d" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div>
+        <div class="r-info"><div class="r-title">${r.title}</div><div class="r-time">${formatDT(r.datetime)}</div></div>
+        <button class="r-del" onclick="deleteReminder('${r.id}')"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      </div>`).join('');
+
+  const calEl = document.getElementById('cal-list');
+  calEl.innerHTML = !events.length
+    ? `<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg><div class="empty-title">No events yet</div></div>`
+    : events.map(ev => `
+      <div class="reminder-item">
+        <div class="r-icon cal"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4cc9f0" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div>
+        <div class="r-info"><div class="r-title">${ev.title}</div>${ev.location?`<div class="r-time">📍 ${ev.location}</div>`:''}<div class="r-time">${formatDT(ev.startDate)}</div></div>
+        <button class="r-del" onclick="deleteEvent('${ev.id}')"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      </div>`).join('');
+}
+function deleteReminder(id) { reminders = reminders.filter(r=>r.id!=id); saveReminders(); renderReminders(); }
+function deleteEvent(id)    { events    = events.filter(e=>e.id!=id);    saveEvents();    renderReminders(); }
+
+// ── TOAST ─────────────────────────────────────────────
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 3500);
+}
+
+renderTodos();
+</script>
+</body>
+</html>
